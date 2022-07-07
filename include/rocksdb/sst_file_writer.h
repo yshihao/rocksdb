@@ -115,6 +115,8 @@ class SstFileWriter {
   // REQUIRES: comparator is *not* timestamp-aware.
   ROCKSDB_DEPRECATED_FUNC Status Add(const Slice& user_key, const Slice& value);
 
+  Status PutInternalKey(const Slice& internal_key, const Slice& value);
+
   // Add a Put key with value to currently opened file
   // REQUIRES: key is after any previously added key according to comparator.
   // REQUIRES: comparator is *not* timestamp-aware.

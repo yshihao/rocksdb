@@ -98,6 +98,38 @@ struct SstFileWriter::Rep {
     InvalidatePageCache(false /* closing */).PermitUncheckedError();
     return Status::OK();
   }
+  
+  Status AddInternalKeyImpl(const Slice& internal_key, const Slice& value) {
+    if (!builder) {
+      return Status::InvalidArgument("File is not opened");
+    }
+
+    if (file_info.num_entries == 0) {
+      file_info.smallest_key.assign(internal_key.data(), internal_key.size());
+    } else {
+      if (internal_comparator.user_comparator()->Compare(
+              internal_key, file_info.largest_key) <= 0) {
+        // Make sure that keys are added in order
+        return Status::InvalidArgument(
+            "Keys must be added in strict ascending order.");
+      }
+    }
+
+    ValueType value_type = ExtractValueType(internal_key);
+    assert(value_type == kTypeValue || value_type == kTypeMerge ||
+            value_type == kTypeDeletion ||
+            value_type == kTypeDeletionWithTimestamp);
+
+    builder->Add(internal_key, value);
+
+    // update file info
+    file_info.num_entries++;
+    file_info.largest_key.assign(internal_key.data(), internal_key.size());
+    file_info.file_size = builder->FileSize();
+
+    InvalidatePageCache(false /* closing */).PermitUncheckedError();
+    return Status::OK();
+  }
 
   Status Add(const Slice& user_key, const Slice& value, ValueType value_type) {
     if (internal_comparator.timestamp_size() != 0) {
@@ -105,6 +137,14 @@ struct SstFileWriter::Rep {
     }
 
     return AddImpl(user_key, value, value_type);
+  }
+
+  Status Add(const Slice& internal_key, const Slice& value) {
+    if (internal_comparator.timestamp_size() != 0) {
+      return Status::InvalidArgument("Timestamp size mismatch");
+    }
+
+    return AddInternalKeyImpl(internal_key, value);
   }
 
   Status Add(const Slice& user_key, const Slice& timestamp, const Slice& value,
@@ -314,6 +354,10 @@ Status SstFileWriter::Open(const std::string& file_path) {
 
 Status SstFileWriter::Add(const Slice& user_key, const Slice& value) {
   return rep_->Add(user_key, value, ValueType::kTypeValue);
+}
+
+Status SstFileWriter::PutInternalKey(const Slice& internal_key, const Slice& value) {
+  return rep_->Add(internal_key, value);
 }
 
 Status SstFileWriter::Put(const Slice& user_key, const Slice& value) {
